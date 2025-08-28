@@ -1,0 +1,39 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  .md-compact{font-size:13.5px; line-height:1.56; letter-spacing:.003em; word-break:break-word; color:inherit}
+  .md-compact p{margin:.28em 0}
+  .md-compact ul{margin:.18em 0; padding-left:1.1em; list-style-position:outside}
+  .md-compact ol{margin:.18em 0; padding-left:1.45em; list-style-position:outside}
+  .md-compact li{margin:.08em 0}
+  .md-compact code{padding:0 .2em; border-radius:.2em; background:#f5f6f7}
+  .md-compact pre{margin:.25em 0; padding:.5em; border-radius:.5em; background:#f5f6f7; overflow:auto}
+  .md-compact h1{margin:.4em 0 .2em; font-size:1.06em; font-weight:600}
+  .md-compact h2{margin:.35em 0 .15em; font-size:1.04em; font-weight:600}
+  .md-compact h3{margin:.3em 0 .1em; font-size:1.02em; font-weight:600}
+  body{margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial,"Noto Sans","Liberation Sans",sans-serif}
+</style>
+
+<div id="root" class="md-compact"><p style="opacity:.6">md-box ready…</p></div>
+
+<script>
+  const root = document.getElementById('root');
+
+  function setHtml(html){
+    root.innerHTML = html || '<p></p>';
+    requestAnimationFrame(postHeight);
+  }
+  function postHeight(){
+    const h = Math.ceil(document.documentElement.scrollHeight);
+    parent.postMessage({type:'height', height:h}, '*');
+  }
+  const mo = new MutationObserver(postHeight);
+  mo.observe(root, {childList:true, subtree:true, attributes:true});
+
+  window.addEventListener('load', postHeight);
+  window.addEventListener('message', (ev) => {
+    const d = ev.data || {};
+    if (d.type === 'set-html') setHtml(String(d.html || ''));
+  });
+</script>
