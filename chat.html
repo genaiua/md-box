@@ -9,30 +9,71 @@
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
 
 <style>
-  :root { --bubble-w: 640px; --pad: 12px; }
+  :root{
+    /* налаштовувані змінні */
+    --bubble-max: min(720px, calc(100vw - 48px));
+    --pad-v: 10px;
+    --pad-h: 14px;
+    --radius: 14px;
+    --gap: 10px;
+    --shadow: 0 1px 2px rgba(0,0,0,.06), 0 6px 24px rgba(0,0,0,.06);
+    --shadow-strong: 0 1px 2px rgba(0,0,0,.08), 0 10px 34px rgba(0,0,0,.08);
+  }
+
   html,body{height:100%}
-  body{margin:0;font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Arial;background:transparent}
-  .wrap{padding:10px}
-  .msg{max-width:var(--bubble-w); margin:8px 0; padding:10px 12px; border-radius:12px}
-  .user{margin-left:auto; background:#f0f2f5; box-shadow:0 1px 2px rgba(0,0,0,.06)}
-  .bot{margin-right:auto; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.08)}
-  .md-compact{font-size:13.5px; line-height:1.56; letter-spacing:.003em; word-break:break-word}
-  .md-compact p{margin:.28em 0}
-  .md-compact ul{margin:.18em 0; padding-left:1.1em; list-style-position:outside}
-  .md-compact ol{margin:.18em 0; padding-left:1.45em; list-style-position:outside}
-  .md-compact li{margin:.08em 0}
-  .md-compact code{padding:0 .2em; border-radius:.2em; background:#f5f6f7}
-  .md-compact pre{margin:.25em 0; padding:.5em; border-radius:.5em; background:#f5f6f7; overflow:auto}
-  .md-compact h1{margin:.4em 0 .2em; font-size:1.06em; font-weight:600}
-  .md-compact h2{margin:.35em 0 .15em; font-size:1.04em; font-weight:600}
-  .md-compact h3{margin:.3em 0 .1ем; font-size:1.02em; font-weight:600}
-  .cursor{display:inline-block; width:.6ch; line-height:1; vertical-align:baseline}
+  body{
+    margin:0;
+    font: clamp(14px, 1.7vw, 16px)/1.6 system-ui,-apple-system,Segoe UI,Roboto,Arial;
+    background:transparent;
+    color:#111;
+  }
+
+  /* стрічка чату */
+  #chat{
+    padding:16px 12px;
+  }
+
+  /* бульбашка */
+  .msg{
+    display:inline-block;               /* ширина від контенту */
+    width:fit-content;
+    max-width:var(--bubble-max);
+    margin: var(--gap) 0;
+    padding: var(--pad-v) var(--pad-h);
+    border-radius: var(--radius);
+    overflow-wrap: anywhere;
+    word-break: normal;
+    hyphens: auto;
+  }
+
+  /* вирівнювання */
+  .user{ margin-left:auto; background:#f3f6ff; box-shadow:var(--shadow-strong); }
+  .bot { margin-right:auto; background:#fff;   box-shadow:var(--shadow); }
+
+  /* компактна розмітка MD */
+  .md-compact{ letter-spacing:.002em; }
+  .md-compact p{ margin:.35em 0 }
+  .md-compact ul,.md-compact ol{ margin:.25em 0; padding-left:1.2em }
+  .md-compact li{ margin:.1em 0 }
+  .md-compact code{
+    padding:.08em .35em; border-radius:.28em; background:#f4f5f6;
+    font-size:.95em;
+  }
+  .md-compact pre{
+    margin:.3em 0; padding:.65em .75em; border-radius:.6em; background:#f4f5f6; overflow:auto
+  }
+  .md-compact h1{ margin:.45em 0 .2em; font-size:1.08em; font-weight:600 }
+  .md-compact h2{ margin:.35em 0 .15em; font-size:1.05em; font-weight:600 }
+  .md-compact h3{ margin:.3em 0 .1em;  font-size:1.02em; font-weight:600 }
+
+  /* курсор друку — на базовій лінії тексту */
+  .cursor{ display:inline-block; width:.6ch; line-height:1; vertical-align:baseline }
 </style>
 
-<div id="chat" class="wrap" aria-live="polite"></div>
+<div id="chat" aria-live="polite"></div>
 
 <script>
-  // ---- MD → safe HTML (такий самий whitelist, як у Wix) ----
+  // ---- MD → safe HTML (той самий whitelist, що й у Wix) ----
   const ALLOWED_TAGS = [
     'p','blockquote','ul','ol','li','b','i','strong','em','s',
     'code','pre','a','br','hr','h1','h2','h3','h4','h5','h6'
@@ -61,7 +102,7 @@
   function renderList(items){
     chat.innerHTML = '';
     (items || []).forEach(it => chat.appendChild(bubble(it)));
-    typingEl = null; // скидаємо "друкарську" бульбашку
+    typingEl = null; // скинути «друкарську» бульбашку
     scheduleFit();
     scrollToBottom();
   }
@@ -72,7 +113,7 @@
     scrollToBottom();
   }
 
-  // --- курсор усередині останнього рядка ---
+  // --- курсор у кінці останнього рядка ---
   function injectCursorAtEnd(html, cursor){
     const liEnd = html.lastIndexOf('</li>');
     if (liEnd !== -1) {
@@ -89,11 +130,10 @@
     if (preEnd !== -1) return html.slice(0, preEnd) + cursor + html.slice(preEnd);
     const divEnd = html.lastIndexOf('</div>');
     if (divEnd !== -1) return html.slice(0, divEnd) + cursor + html.slice(divEnd);
-    // коли немає жодного блочного елемента
     return html + cursor;
   }
 
-  // "Друк" із курсором у останній бот-бульбашці
+  // «Друк» у останній бот-бульбашці
   let typingEl = null;
   function ensureTypingBubble(){
     if (!typingEl) {
@@ -120,7 +160,7 @@
 
   function scrollToBottom(){ window.scrollTo(0, document.documentElement.scrollHeight); }
 
-  // ---- Height autosize (дроселювання) ----
+  // ---- авто-висота (дроселювання) ----
   let fitPending = false;
   function fitNow(){
     fitPending = false;
@@ -138,36 +178,29 @@
   }
   new ResizeObserver(scheduleFit).observe(chat);
 
-  // ---- Безпечний парсер повідомлень (об’єкт або JSON-рядок) ----
+  // ---- парсер повідомлень (об’єкт або JSON-рядок) ----
   function parseMsg(data){
     let msg = data;
     try { if (typeof msg === 'string') msg = JSON.parse(msg); } catch(_){}
     return (msg && typeof msg === 'object') ? msg : null;
   }
 
-  // ---- Слухаємо Wix + ping/pong ----
+  // ---- Wix + ping/pong ----
   window.addEventListener('message', (e) => {
     const msg = parseMsg(e.data);
     if (!msg) return;
 
     switch (msg.type) {
-      case 'ping':
-        parent.postMessage({ type:'pong', t: msg.t ?? Date.now() }, '*');
-        return;
-
+      case 'ping': parent.postMessage({ type:'pong', t: msg.t ?? Date.now() }, '*'); return;
       case 'replace': renderList(msg.items); return;
       case 'append' : appendOne(msg.message); return;
       case 'renderMdCursor': renderMdCursor(msg.md || '', !!msg.visible); return;
       case 'renderMd': renderMd(msg.md || ''); return;
-
-      // для діагностики:
-      case 'echo?':
-        parent.postMessage({ type:'echo!', got: msg }, '*');
-        return;
+      case 'echo?': parent.postMessage({ type:'echo!', got: msg }, '*'); return;
     }
   });
 
-  // ---- Сигнали готовності ----
+  // ---- готовність ----
   window.addEventListener('load', () => {
     parent.postMessage({ type:'ready' }, '*');
     scheduleFit();
