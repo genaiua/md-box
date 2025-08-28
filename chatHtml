@@ -1,39 +1,90 @@
 <!doctype html>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-  .md-compact{font-size:13.5px; line-height:1.56; letter-spacing:.003em; word-break:break-word; color:inherit}
-  .md-compact p{margin:.28em 0}
-  .md-compact ul{margin:.18em 0; padding-left:1.1em; list-style-position:outside}
-  .md-compact ol{margin:.18em 0; padding-left:1.45em; list-style-position:outside}
-  .md-compact li{margin:.08em 0}
-  .md-compact code{padding:0 .2em; border-radius:.2em; background:#f5f6f7}
-  .md-compact pre{margin:.25em 0; padding:.5em; border-radius:.5em; background:#f5f6f7; overflow:auto}
-  .md-compact h1{margin:.4em 0 .2em; font-size:1.06em; font-weight:600}
-  .md-compact h2{margin:.35em 0 .15em; font-size:1.04em; font-weight:600}
-  .md-compact h3{margin:.3em 0 .1em; font-size:1.02em; font-weight:600}
-  body{margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial,"Noto Sans","Liberation Sans",sans-serif}
-</style>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    .wrap { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    .md-compact{font-size:13.5px; line-height:1.56; letter-spacing:.003em; word-break:break-word; color:inherit}
+    .md-compact p{margin:.28em 0}
+    .md-compact ul{margin:.18em 0; padding-left:1.1em; list-style-position:outside}
+    .md-compact ol{margin:.18em 0; padding-left:1.45em; list-style-position:outside}
+    .md-compact li{margin:.08em 0}
+    .md-compact code{padding:0 .2em; border-radius:.2em; background:#f5f6f7}
+    .md-compact pre{margin:.25em 0; padding:.5em; border-radius:.5em; background:#f5f6f7; overflow:auto}
+    .md-compact h1{margin:.4em 0 .2em; font-size:1.06em; font-weight:600}
+    .md-compact h2{margin:.35em 0 .15em; font-size:1.04em; font-weight:600}
+    .md-compact h3{margin:.3em 0 .1em;  font-size:1.02em; font-weight:600}
 
-<div id="root" class="md-compact"><p style="opacity:.6">md-box ready…</p></div>
+    .row{display:flex; gap:10px; margin:.3rem 0}
+    .me{justify-content:flex-end}
+    .me .bubble{background:#e9f2ff}
+    .bot .bubble{background:#f5f6f7}
+    .bubble{max-width:640px; padding:.55rem .7rem; border-radius:14px}
+    [data-cursor]{display:inline-block; width:.8ch}
+  </style>
+</head>
+<body>
+<div id="root" class="wrap"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
 <script>
   const root = document.getElementById('root');
+  let messages = [];
 
-  function setHtml(html){
-    root.innerHTML = html || '<p></p>';
-    requestAnimationFrame(postHeight);
+  function safeHtmlFromMd(md){ 
+    const raw = marked.parse(md || '');
+    return DOMPurify.sanitize(raw);
   }
-  function postHeight(){
-    const h = Math.ceil(document.documentElement.scrollHeight);
-    parent.postMessage({type:'height', height:h}, '*');
-  }
-  const mo = new MutationObserver(postHeight);
-  mo.observe(root, {childList:true, subtree:true, attributes:true});
 
-  window.addEventListener('load', postHeight);
+  function renderAll() {
+    root.innerHTML = messages.map(m => {
+      const cls = m.from === 'user' ? 'row me' : 'row bot';
+      const inner = m.html ? m.html : `<div class="md-compact">${safeHtmlFromMd(m.md||'')}</div>`;
+      return `<div class="${cls}"><div class="bubble">${inner}</div></div>`;
+    }).join('');
+    resize();
+    // авто-скрол вниз
+    window.scrollTo(0, document.body.scrollHeight);
+  }
+
+  function resize(){
+    const h = document.documentElement.scrollHeight;
+    parent.postMessage({ type:'height', height:h }, '*'); // за потреби підстав свій origin
+  }
+
+  // API з Wix
   window.addEventListener('message', (ev) => {
     const d = ev.data || {};
-    if (d.type === 'set-html') setHtml(String(d.html || ''));
+    if (d.type === 'replace') {
+      messages = d.messages || [];
+      renderAll();
+    } else if (d.type === 'append') {
+      messages.push(d.message);
+      renderAll();
+    } else if (d.type === 'renderMd') {
+      // замінити останню «бот»-бульбашку
+      const i = messages.map(x=>x.from).lastIndexOf('assistant');
+      if (i >= 0) { messages[i].md = d.md; messages[i].html = ''; }
+      renderAll();
+    } else if (d.type === 'renderHTML') {
+      const i = messages.map(x=>x.from).lastIndexOf('assistant');
+      if (i >= 0) { messages[i].html = d.html; }
+      renderAll();
+    } else if (d.type === 'renderMdCursor') {
+      const i = messages.map(x=>x.from).lastIndexOf('assistant');
+      if (i >= 0) {
+        const md = d.md || '';
+        const cursor = d.visible ? '<span data-cursor>▍</span>' : '<span data-cursor></span>';
+        messages[i].html = `<div class="md-compact">${safeHtmlFromMd(md)}${cursor}</div>`;
+        messages[i].md = md;
+        renderAll();
+      }
+    }
   });
+
+  new ResizeObserver(resize).observe(document.body);
 </script>
+</body>
+</html>
