@@ -10,29 +10,43 @@
 
 <style>
   :root { --bubble-w: 640px; --pad: 12px; }
-  body{margin:0;font:14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Arial}
+  html,body{height:100%}
+  body{margin:0;font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Arial;background:transparent}
   .wrap{padding:10px}
   .msg{max-width:var(--bubble-w); margin:8px 0; padding:10px 12px; border-radius:12px}
-  .user{margin-left:auto; background:#f0f2f5; box-shadow: 0 1px 2px rgba(0,0,0,.06)}
-  .bot{margin-right:auto; background:white; box-shadow: 0 1px 2px rgba(0,0,0,.08)}
+  .user{margin-left:auto; background:#f0f2f5; box-shadow:0 1px 2px rgba(0,0,0,.06)}
+  .bot{margin-right:auto; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.08)}
   .md-compact{font-size:13.5px; line-height:1.56; letter-spacing:.003em; word-break:break-word}
   .md-compact p{margin:.28em 0}
-  .md-compact ul{margin:.18em 0; padding-left:1.1em}
-  .md-compact ol{margin:.18em 0; padding-left:1.45em}
+  .md-compact ul{margin:.18em 0; padding-left:1.1em; list-style-position:outside}
+  .md-compact ol{margin:.18em 0; padding-left:1.45em; list-style-position:outside}
   .md-compact li{margin:.08em 0}
   .md-compact code{padding:0 .2em; border-radius:.2em; background:#f5f6f7}
   .md-compact pre{margin:.25em 0; padding:.5em; border-radius:.5em; background:#f5f6f7; overflow:auto}
+  .md-compact h1{margin:.4em 0 .2em; font-size:1.06em; font-weight:600}
+  .md-compact h2{margin:.35em 0 .15em; font-size:1.04em; font-weight:600}
+  .md-compact h3{margin:.3em 0 .1em;  font-size:1.02em; font-weight:600}
   .cursor{display:inline-block; width:.6ch}
+  .probe{opacity:.5; font-size:12px; margin:8px 0}
 </style>
 
 <div id="chat" class="wrap" aria-live="polite"></div>
+<div class="wrap probe">iframe loaded…</div>
 
 <script>
+  // ---- MD → safe HTML (такий самий whitelist, як у Wix) ----
+  const ALLOWED_TAGS = [
+    'p','blockquote','ul','ol','li','b','i','strong','em','s',
+    'code','pre','a','br','hr','h1','h2','h3','h4','h5','h6'
+  ];
+  const ALLOWED_ATTR = ['href','target','rel','class'];
+  marked.setOptions({ gfm:true, breaks:true, smartypants:true, headerIds:false, mangle:false });
+
   const chat = document.getElementById('chat');
 
   function mdToHtml(md){
-    const html = marked.parse(md ?? '');
-    return DOMPurify.sanitize(html);
+    const raw = marked.parse(md ?? '');
+    return DOMPurify.sanitize(raw, { ALLOWED_TAGS, ALLOWED_ATTR });
   }
 
   function bubble({from, md, html}) {
@@ -41,7 +55,7 @@
     if (html) {
       div.innerHTML = `<div class="md-compact">${html}</div>`;
     } else {
-      div.innerHTML = `<div class="md-compact">${mdToHtml(md)}</div>`;
+      div.innerHTML = `<div class="md-compact">${mdToHtml(md || '')}</div>`;
     }
     return div;
   }
@@ -49,64 +63,97 @@
   function renderList(items){
     chat.innerHTML = '';
     (items || []).forEach(it => chat.appendChild(bubble(it)));
-    fit();
+    scheduleFit();
     scrollToBottom();
   }
 
   function appendOne(message){
-    chat.appendChild(bubble(message));
-    fit();
+    chat.appendChild(bubble(message || {from:'assistant', md:''}));
+    scheduleFit();
     scrollToBottom();
   }
 
   // "Друк" із курсором у останній бот-бульбашці
   let typingEl = null;
-  function renderMdCursor(md, visible){
+  function ensureTypingBubble(){
     if (!typingEl) {
       typingEl = bubble({from:'assistant', md:''});
       chat.appendChild(typingEl);
     }
+  }
+  function renderMdCursor(md, visible){
+    ensureTypingBubble();
     typingEl.querySelector('.md-compact').innerHTML =
       mdToHtml(md) + `<span class="cursor">${visible ? '▍' : ''}</span>`;
-    fit();
+    scheduleFit();
     scrollToBottom();
   }
 
   function renderMd(md){
-    if (!typingEl) {
-      typingEl = bubble({from:'assistant', md:''});
-      chat.appendChild(typingEl);
-    }
+    ensureTypingBubble();
     typingEl.querySelector('.md-compact').innerHTML = mdToHtml(md);
     typingEl = null;
-    fit();
+    scheduleFit();
     scrollToBottom();
   }
 
-  function fit(){
-    // повідомляємо Wix про висоту
-    const height = Math.max(document.body.scrollHeight, chat.scrollHeight);
-    parent.postMessage({ type:'height', height }, '*');
+  function scrollToBottom(){ window.scrollTo(0, document.documentElement.scrollHeight); }
+
+  // ---- Height autosize (дроселювання) ----
+  let fitPending = false;
+  function fitNow(){
+    fitPending = false;
+    const h = Math.max(
+      document.documentElement.scrollHeight,
+      document.body.scrollHeight,
+      chat.scrollHeight
+    );
+    parent.postMessage({ type:'height', height: h }, '*');
+  }
+  function scheduleFit(){
+    if (fitPending) return;
+    fitPending = true;
+    requestAnimationFrame(fitNow);
+  }
+  new ResizeObserver(scheduleFit).observe(chat);
+
+  // ---- Безпечний парсер повідомлень (об’єкт або JSON-рядок) ----
+  function parseMsg(data){
+    let msg = data;
+    try { if (typeof msg === 'string') msg = JSON.parse(msg); } catch(_){}
+    return (msg && typeof msg === 'object') ? msg : null;
   }
 
-  function scrollToBottom(){ window.scrollTo(0, document.body.scrollHeight); }
-
-  // слухаємо Wix
+  // ---- Слухаємо Wix + ping/pong ----
   window.addEventListener('message', (e) => {
-    const msg = e.data || {};
+    const msg = parseMsg(e.data);
+    if (!msg) return;
+    // console.log('[PARENT MSG]', msg);
+
     switch (msg.type) {
-      case 'replace': renderList(msg.items); break;
-      case 'append' : appendOne(msg.message); break;
-      case 'renderMdCursor': renderMdCursor(msg.md || '', !!msg.visible); break;
-      case 'renderMd': renderMd(msg.md || ''); break;
+      case 'ping':
+        parent.postMessage({ type:'pong', t: msg.t ?? Date.now() }, '*');
+        return;
+
+      case 'replace': renderList(msg.items); return;
+      case 'append' : appendOne(msg.message); return;
+      case 'renderMdCursor': renderMdCursor(msg.md || '', !!msg.visible); return;
+      case 'renderMd': renderMd(msg.md || ''); return;
+
+      // для діагностики:
+      case 'echo?':
+        parent.postMessage({ type:'echo!', got: msg }, '*');
+        return;
     }
   });
 
-  // сигнал "iframe готовий"
+  // ---- Сигнали готовності ----
   window.addEventListener('load', () => {
     parent.postMessage({ type:'ready' }, '*');
-    fit();
+    scheduleFit();
   });
+</script>
+</html>
 
   // опційно: просте поле введення прямо в iFrame (якщо треба)
   // parent.postMessage({ type:'user:send', text: '...' }, '*')
